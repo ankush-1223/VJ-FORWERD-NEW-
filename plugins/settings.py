@@ -207,9 +207,8 @@ async def process_settings_query(bot, query):
         buttons = []
         data = await get_configs(user_id)
         caption = data.get('caption')
-        replacements = data.get('replacement_words') or {}
-        delete_words = data.get('delete_words') or []
 
+        # Main caption buttons
         if caption is None:
             buttons.append([InlineKeyboardButton('✚ Add Caption ✚',
                                               callback_data="settings#addcaption")])
@@ -218,23 +217,26 @@ async def process_settings_query(bot, query):
                 InlineKeyboardButton('👀 See Caption', callback_data="settings#seecaption"),
                 InlineKeyboardButton('🗑️ Delete Caption', callback_data="settings#deletecaption")
             ])
-            buttons.append([
-                InlineKeyboardButton('🔄 Replace Words', callback_data="settings#setreplacement"),
-                InlineKeyboardButton('🗑️ Remove Words', callback_data="settings#deleteword")
-            ])
-            buttons.append([InlineKeyboardButton('🔁 Reset Caption Settings',
-                                              callback_data="settings#resetcaption")])
 
+        # Separate buttons for each feature
+        buttons.append([InlineKeyboardButton('🔄 Add Word Replacement', 
+                                          callback_data="settings#setreplacement")])
+        buttons.append([InlineKeyboardButton('🗑️ Add Words to Delete', 
+                                          callback_data="settings#deleteword")])
+        buttons.append([InlineKeyboardButton('🔁 Reset All Settings', 
+                                          callback_data="settings#resetcaption")])
         buttons.append([InlineKeyboardButton('⫷ Back', callback_data="settings#main")])
 
         await query.message.edit_text(
             "<b><u>CUSTOM CAPTION</u></b>\n\n"
-            "<b>You can set a custom caption for videos and documents. By default, the original caption is used.</b>\n\n"
-            "<b><u>AVAILABLE FILLINGS:</u></b>\n"
-            "- <code>{filename}</code> : Filename\n"
-            "- <code>{size}</code> : File size\n"
-            "- <code>{caption}</code> : Default caption\n\n"
-            "<b>You can also replace or delete specific words from the filename/caption.</b>",
+            "<b>You can customize your captions in multiple ways:</b>\n\n"
+            "1️⃣ <b>Set Custom Caption</b>\n"
+            "   Use placeholders: <code>{filename}</code>, <code>{size}</code>, <code>{caption}</code>\n\n"
+            "2️⃣ <b>Word Replacements</b>\n"
+            "   Replace specific words in captions\n\n"
+            "3️⃣ <b>Delete Words</b>\n"
+            "   Remove specific words from captions\n\n"
+            "<i>Click any button below to get started</i>",
             reply_markup=InlineKeyboardMarkup(buttons)
         )
 
@@ -286,24 +288,27 @@ async def process_settings_query(bot, query):
         try:
             await query.message.delete()
             caption = await bot.ask(query.message.chat.id, 
-                "Send your custom caption\n/cancel - <code>cancel this process</code>")
+                "Send your custom caption\n\n<b>Available placeholders:</b>\n"
+                "- <code>{filename}</code> : Original filename\n"
+                "- <code>{size}</code> : File size\n"
+                "- <code>{caption}</code> : Original caption\n\n"
+                "You can use any or all of these placeholders.\n"
+                "/cancel - <code>cancel this process</code>")
             
             if caption.text == "/cancel":
                 return await handle_back_button(caption, "settings#caption")
             
-            # Validate caption format
-            required_keys = {'filename', 'size', 'caption'}
+            # More flexible validation - allow any text with optional placeholders
             try:
-                test_format = caption.text.format(filename='', size='', caption='')
-                # Check if all required keys are present
-                if not all(key in caption.text for key in required_keys):
-                    return await caption.reply(
-                        f"❌ Missing required placeholders. Must include: {', '.join(required_keys)}",
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⫷ Back', callback_data="settings#caption")]])
-                    )
+                # Try to format with empty values for any placeholders used
+                test_format = caption.text.format(
+                    filename='', 
+                    size='', 
+                    caption=''
+                )
             except KeyError as e:
                 return await caption.reply(
-                    f"❌ Invalid placeholder {e}. Use only: {', '.join(required_keys)}",
+                    f"❌ Invalid placeholder {e}. You can only use: filename, size, caption",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⫷ Back', callback_data="settings#caption")]])
                 )
             
@@ -318,14 +323,20 @@ async def process_settings_query(bot, query):
         try:
             await query.message.delete()
             ask = await bot.ask(query.message.chat.id, 
-                "**Send word to replace in format:**\n`'WORD' 'REPLACEWORD'`\n\n/cancel to abort")
+                "Send word to replace in this format:\n"
+                "<code>'OLD WORD' 'NEW WORD'</code>\n\n"
+                "Example: <code>'movie' 'film'</code>\n\n"
+                "/cancel to abort")
             
             if ask.text == "/cancel":
                 return await handle_back_button(ask, "settings#caption")
             
             match = re.match(r"'(.+)' '(.+)'", ask.text)
             if not match:
-                return await ask.reply("❌ Invalid format. Use `'OLD' 'NEW'`.")
+                return await ask.reply(
+                    "❌ Invalid format. Please use: <code>'OLD WORD' 'NEW WORD'</code>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⫷ Back', callback_data="settings#caption")]])
+                )
             
             word, replace_word = match.groups()
             data = await get_configs(user_id)
@@ -340,7 +351,10 @@ async def process_settings_query(bot, query):
             replacements = data.get('replacement_words', {}) or {}
             replacements[word] = replace_word
             await update_configs(user_id, 'replacement_words', replacements)
-            await handle_back_button(ask, "settings#caption")
+            await ask.reply(
+                f"✅ Successfully added replacement:\n<code>{word}</code> → <code>{replace_word}</code>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⫷ Back', callback_data="settings#caption")]])
+            )
             
         except Exception as e:
             await query.message.reply(f"❌ Error: {str(e)}")
@@ -350,18 +364,31 @@ async def process_settings_query(bot, query):
         try:
             await query.message.delete()
             ask = await bot.ask(query.message.chat.id, 
-                "**Send word(s) to delete (space separated)**\n\n/cancel to abort")
+                "Send word(s) to delete from captions\n\n"
+                "You can send multiple words separated by spaces\n"
+                "Example: <code>movie film video</code>\n\n"
+                "/cancel to abort")
             
             if ask.text == "/cancel":
                 return await handle_back_button(ask, "settings#caption")
             
             words = ask.text.strip().split()
+            if not words:
+                return await ask.reply(
+                    "❌ Please send at least one word to delete",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⫷ Back', callback_data="settings#caption")]])
+                )
+            
             data = await get_configs(user_id)
             delete_words = data.get('delete_words', []) or []
-            delete_words.extend(w for w in words if w not in delete_words)
+            new_words = [w for w in words if w not in delete_words]
+            delete_words.extend(new_words)
             
             await update_configs(user_id, 'delete_words', delete_words)
-            await handle_back_button(ask, "settings#caption")
+            await ask.reply(
+                f"✅ Successfully added {len(new_words)} word(s) to delete list",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⫷ Back', callback_data="settings#caption")]])
+            )
             
         except Exception as e:
             await query.message.reply(f"❌ Error: {str(e)}")
