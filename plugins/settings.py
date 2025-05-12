@@ -29,6 +29,13 @@ async def handle_error(message, error, back_to="settings#main"):
     except Exception as e:
         logger.error(f"Error in handle_error: {e}", exc_info=True)
 
+async def handle_settings_operation(coro, timeout=30):
+    """Handle settings operations with timeout"""
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        raise TimeoutError("Operation timed out")
+
 @Client.on_message(filters.command('settings'))
 async def settings(client, message):
     try:
@@ -58,10 +65,11 @@ async def handle_back_button(message, callback_data="settings#main"):
 @Client.on_callback_query(filters.regex(r'^settings'))
 async def settings_query(bot, query):
     try:
-        async with asyncio.timeout(30):  # 30 second timeout for settings operations
+        async def process_settings():
             user_id = query.from_user.id
             i, type = query.data.split("#")
             buttons = [[InlineKeyboardButton('⫷ Back', callback_data="settings#main")]]
+            
             if type=="main":
                 await query.message.edit_text(
                     "<b>Hᴇʀᴇ Is Tʜᴇ Sᴇᴛᴛɪɴɢs Pᴀɴᴇʟ⚙\n\nᴄʜᴀɴɢᴇ ʏᴏᴜʀ sᴇᴛᴛɪɴɢs ᴀs ʏᴏᴜʀ ᴡɪsʜ 👇</b>",
@@ -614,7 +622,9 @@ async def settings_query(bot, query):
                 alert = type.split('_')[1]
                 await query.answer(alert, show_alert=True)
 
-    except asyncio.TimeoutError:
+        await handle_settings_operation(process_settings())
+        
+    except TimeoutError:
         logger.warning(f"Settings operation timed out for user {query.from_user.id}")
         await query.message.edit_text(
             "⏰ Operation timed out. Please try again.",
