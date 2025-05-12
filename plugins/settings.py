@@ -13,6 +13,17 @@ from .db import connect_user_db
 import re
 from pyrogram.errors import MessageNotModified
 
+
+# --- FIX START: safe_edit_text helper ---
+async def safe_edit_text(message, text, reply_markup=None, **kwargs):
+    try:
+        if message.text != text or message.reply_markup != reply_markup:
+            await message.edit_text(text, reply_markup=reply_markup, **kwargs)
+    except MessageNotModified:
+        pass
+# --- FIX END ---
+
+
 logger = logging.getLogger(__name__)
 CLIENT = CLIENT()
 
@@ -63,7 +74,7 @@ async def settings_query(bot, query):
         await asyncio.wait_for(process_settings_query(bot, query), timeout=30)
     except asyncio.TimeoutError:
         logger.warning(f"Settings operation timed out for user {query.from_user.id}")
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "⏰ Operation timed out. Please try again.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⫷ Back', callback_data="settings#main")]])
         )
@@ -77,11 +88,11 @@ async def process_settings_query(bot, query):
     buttons = [[InlineKeyboardButton('⫷ Back', callback_data="settings#main")]]
     
     if type=="main":
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "<b>Hᴇʀᴇ Is Tʜᴇ Sᴇᴛᴛɪɴɢs Pᴀɴᴇʟ⚙\n\nᴄʜᴀɴɢᴇ ʏᴏᴜʀ sᴇᴛᴛɪɴɢs ᴀs ʏᴏᴜʀ ᴡɪsʜ 👇</b>",
             reply_markup=main_buttons())
     elif type=="extra":
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "<b>Hᴇʀᴇ Is Tʜᴇ Exᴛʀᴀ Sᴇᴛᴛɪɴɢs Pᴀɴᴇʟ⚙</b>",
             reply_markup=extra_buttons())
     elif type=="bots":
@@ -102,7 +113,7 @@ async def process_settings_query(bot, query):
                              callback_data="settings#adduserbot")])
         buttons.append([InlineKeyboardButton('back', 
                           callback_data="settings#main")])
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "<b><u>My Bots</b></u>\n\n<b>You can manage your bots in here</b>",
             reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -132,7 +143,7 @@ async def process_settings_query(bot, query):
                           callback_data="settings#addchannel")])
         buttons.append([InlineKeyboardButton('back', 
                           callback_data="settings#main")])
-        await query.message.edit_text( 
+        await safe_edit_text(query.message,  
             "<b><u>My Channels</b></u>\n\n<b>you can manage your target chats in here</b>",
             reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -161,7 +172,7 @@ async def process_settings_query(bot, query):
         buttons = [[InlineKeyboardButton('❌ Remove ❌', callback_data=f"settings#removebot")
                   ],
                   [InlineKeyboardButton('back', callback_data="settings#bots")]]
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             TEXT.format(bot['name'], bot['id'], bot['username']),
             reply_markup=InlineKeyboardMarkup(buttons))
         
@@ -171,19 +182,19 @@ async def process_settings_query(bot, query):
         buttons = [[InlineKeyboardButton('❌ Remove ❌', callback_data=f"settings#removeuserbot")
                   ],
                   [InlineKeyboardButton('back', callback_data="settings#bots")]]
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             TEXT.format(bot['name'], bot['id'], bot['username']),
             reply_markup=InlineKeyboardMarkup(buttons))
         
     elif type=="removebot":
         await db.remove_bot(user_id)
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "<b>successfully updated</b>",
             reply_markup=InlineKeyboardMarkup(buttons))
         
     elif type=="removeuserbot":
         await db.remove_userbot(user_id)
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "<b>successfully updated</b>",
             reply_markup=InlineKeyboardMarkup(buttons))
         
@@ -193,14 +204,14 @@ async def process_settings_query(bot, query):
         buttons = [[InlineKeyboardButton('❌ Remove ❌', callback_data=f"settings#removechannel_{chat_id}")
                   ],
                   [InlineKeyboardButton('back', callback_data="settings#channels")]]
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             f"<b><u>📄 CHANNEL DETAILS</b></u>\n\n<b>- TITLE:</b> <code>{chat['title']}</code>\n<b>- CHANNEL ID: </b> <code>{chat['chat_id']}</code>\n<b>- USERNAME:</b> {chat['username']}",
             reply_markup=InlineKeyboardMarkup(buttons))
 
     elif type.startswith("removechannel"):
         chat_id = type.split('_')[1]
         await db.remove_channel(user_id, chat_id)
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "<b>successfully updated</b>",
             reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -228,7 +239,7 @@ async def process_settings_query(bot, query):
                                           callback_data="settings#resetcaption")])
         buttons.append([InlineKeyboardButton('⫷ Back', callback_data="settings#main")])
 
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "<b><u>CUSTOM CAPTION</u></b>\n\n"
             "<b>You can customize your captions in multiple ways:</b>\n\n"
             "1️⃣ <b>Set Custom Caption</b>\n"
@@ -307,7 +318,7 @@ async def process_settings_query(bot, query):
             ]
             
             try:
-                await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+                await safe_edit_text(query.message, text, reply_markup=InlineKeyboardMarkup(buttons))
             except MessageNotModified:
                 # If message wasn't modified, just ignore the error
                 pass
@@ -456,7 +467,7 @@ async def process_settings_query(bot, query):
             await update_configs(user_id, 'delete_words', [])
             
             # Show the updated empty caption view
-            await query.message.edit_text(
+            await safe_edit_text(query.message, 
                 "<b>✅ All caption settings have been reset</b>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('👀 See Caption Settings', callback_data="settings#seecaption")]])
             )
@@ -477,7 +488,7 @@ async def process_settings_query(bot, query):
                                   callback_data="settings#deletebutton"))
         buttons.append([InlineKeyboardButton('back', 
                                   callback_data="settings#main")])
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "<b><u>CUSTOM BUTTON</b></u>\n\n<b>You can set a inline button to messages.</b>\n\n<b><u>FORMAT:</b></u>\n`[Forward bot][buttonurl:https://t.me/mychannelurl]`\n",
             reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -495,13 +506,13 @@ async def process_settings_query(bot, query):
         button = (await get_configs(user_id))['button']
         button = parse_buttons(button, markup=False)
         button.append([InlineKeyboardButton("back", "settings#button")])
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "**YOUR CUSTOM BUTTON**",
             reply_markup=InlineKeyboardMarkup(button))
 
     elif type=="deletebutton":
         await update_configs(user_id, 'button', None)
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "**Successfully button deleted**",
             reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -518,7 +529,7 @@ async def process_settings_query(bot, query):
                                   callback_data="settings#deleteurl"))
         buttons.append([InlineKeyboardButton('back', 
                                   callback_data="settings#main")])
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "<b><u>DATABASE</u>\n\nDatabase is required for store your duplicate messages permenant. other wise stored duplicate media may be disappeared when after bot restart.</b>",
             reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -549,12 +560,12 @@ async def process_settings_query(bot, query):
 
     elif type=="deleteurl":
         await update_configs(user_id, 'db_uri', None)
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "**Successfully your database url deleted**",
             reply_markup=InlineKeyboardMarkup(buttons))
 
     elif type=="filters":
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             "<b><u>💠 CUSTOM FILTERS 💠</b></u>\n\n**configure the type of messages which you want forward**",
             reply_markup=await filters_buttons(user_id))
 
@@ -577,14 +588,14 @@ async def process_settings_query(bot, query):
     elif type.startswith("file_size"):
         settings = await get_configs(user_id)
         size = settings.get('min_size', 0)
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             f'<b><u>SIZE LIMIT</b></u><b>\n\nyou can set file Minimum size limit to forward\n\nfiles with greater than `{size} MB` will forward</b>',
             reply_markup=size_button(size))
         
     elif type.startswith("maxfile_size"):
         settings = await get_configs(user_id)
         size = settings.get('max_size', 0)
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             f'<b><u>Max SIZE LIMIT</b></u><b>\n\nyou can set file Maximum size limit to forward\n\nfiles with less than `{size} MB` will forward</b>',
             reply_markup=maxsize_button(size))
 
@@ -594,7 +605,7 @@ async def process_settings_query(bot, query):
             return await query.answer("size limit exceeded", show_alert=True)
         await update_configs(user_id, 'min_size', size)
         i, limit = size_limit((await get_configs(user_id))['size_limit'])
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             f'<b><u>SIZE LIMIT</b></u><b>\n\nyou can set file Minimum size limit to forward\n\nfiles with greater than `{size} MB` will forward</b>',
             reply_markup=size_button(size))
         
@@ -604,7 +615,7 @@ async def process_settings_query(bot, query):
             return await query.answer("size limit exceeded", show_alert=True)
         await update_configs(user_id, 'max_size', size)
         i, limit = size_limit((await get_configs(user_id))['size_limit'])
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             f'<b><u>Max SIZE LIMIT</b></u><b>\n\nyou can set file Maximum size limit to forward\n\nfiles with less than `{size} MB` will forward</b>',
             reply_markup=maxsize_button(size))
 
@@ -612,7 +623,7 @@ async def process_settings_query(bot, query):
         i, limit, size = type.split('-')
         limit, sts = size_limit(limit)
         await update_configs(user_id, 'size_limit', limit) 
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             f'<b><u>SIZE LIMIT</b></u><b>\n\nyou can set file size limit to forward\n\nStatus: files with {sts} `{size} MB` will forward</b>',
             reply_markup=size_button(int(size)))
 
@@ -651,7 +662,7 @@ async def process_settings_query(bot, query):
         btn.append([InlineKeyboardButton('✚ Add', 'settings#add_extension')])
         btn.append([InlineKeyboardButton('Remove All', 'settings#rmve_all_extension')])
         btn.append([InlineKeyboardButton('back', 'settings#extra')])
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             text=f"<b><u>EXTENSIONS</u></b>\n\n**Files with these extiontions will not forward**\n\n{text}",
             reply_markup=InlineKeyboardMarkup(btn))
 
@@ -660,7 +671,7 @@ async def process_settings_query(bot, query):
         buttons = []
         buttons.append([InlineKeyboardButton('back', 
                                   callback_data="settings#get_extension")])
-        await query.message.edit_text(text="**successfully deleted**",
+        await safe_edit_text(query.message, text="**successfully deleted**",
                                        reply_markup=InlineKeyboardMarkup(buttons))
     elif type == "add_keyword":
         await query.message.delete()
@@ -697,7 +708,7 @@ async def process_settings_query(bot, query):
         btn.append([InlineKeyboardButton('✚ Add', 'settings#add_keyword')])
         btn.append([InlineKeyboardButton('Remove all', 'settings#rmve_all_keyword')])
         btn.append([InlineKeyboardButton('Back', 'settings#extra')])
-        await query.message.edit_text(
+        await safe_edit_text(query.message, 
             text=f"<b><u>Keywords</u></b>\n\n**Files with these keywords in file name only forwad**\n\n{text}",
             reply_markup=InlineKeyboardMarkup(btn))
 
@@ -706,7 +717,7 @@ async def process_settings_query(bot, query):
         buttons = []
         buttons.append([InlineKeyboardButton('back', 
                                   callback_data="settings#get_keyword")])
-        await query.message.edit_text(text="**successfully deleted All Keywords**",
+        await safe_edit_text(query.message, text="**successfully deleted All Keywords**",
                                        reply_markup=InlineKeyboardMarkup(buttons))
     elif type.startswith("alert"):
         alert = type.split('_')[1]
