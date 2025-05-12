@@ -379,9 +379,11 @@ async def process_settings_query(bot, query):
             replacements = data.get('replacement_words', {}) or {}
             replacements[word] = replace_word
             await update_configs(user_id, 'replacement_words', replacements)
+            
+            # Show updated caption view immediately
             await ask.reply(
                 f"✅ Successfully added replacement:\n<code>{word}</code> → <code>{replace_word}</code>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⫷ Back', callback_data="settings#caption")]])
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('👀 See Updated Caption', callback_data="settings#seecaption")]])
             )
             
         except Exception as e:
@@ -412,10 +414,21 @@ async def process_settings_query(bot, query):
             new_words = [w for w in words if w not in delete_words]
             delete_words.extend(new_words)
             
+            # Check if any words are in replacements
+            replacements = data.get('replacement_words', {}) or {}
+            conflicting_words = [word for word in new_words if word in replacements]
+            if conflicting_words:
+                return await ask.reply(
+                    f"❌ The following words are in your replacements and cannot be deleted: {', '.join(conflicting_words)}",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⫷ Back', callback_data="settings#caption")]])
+                )
+            
             await update_configs(user_id, 'delete_words', delete_words)
+            
+            # Show updated caption view immediately
             await ask.reply(
                 f"✅ Successfully added {len(new_words)} word(s) to delete list",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⫷ Back', callback_data="settings#caption")]])
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('👀 See Updated Caption', callback_data="settings#seecaption")]])
             )
             
         except Exception as e:
