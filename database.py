@@ -1,16 +1,38 @@
 import motor.motor_asyncio
 from config import Config
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Db:
 
     def __init__(self, uri, database_name):
-        self._client = motor.motor_asyncio.AsyncIOMotorClient(uri)
-        self.db = self._client[database_name]
-        self.bot = self.db.bots
-        self.userbot = self.db.userbot 
-        self.col = self.db.users
-        self.nfy = self.db.notify
-        self.chl = self.db.channels 
+        try:
+            self._client = motor.motor_asyncio.AsyncIOMotorClient(
+                uri,
+                maxPoolSize=50,
+                minPoolSize=10,
+                maxIdleTimeMS=30000,
+                serverSelectionTimeoutMS=5000
+            )
+            self.db = self._client[database_name]
+            self.bot = self.db.bots
+            self.userbot = self.db.userbot 
+            self.col = self.db.users
+            self.nfy = self.db.notify
+            self.chl = self.db.channels 
+            logger.info(f"Database connection initialized for {database_name}")
+        except Exception as e:
+            logger.error(f"Failed to initialize database connection: {e}", exc_info=True)
+            raise
+
+    async def verify_connection(self):
+        try:
+            await self._client.server_info()
+            return True
+        except Exception as e:
+            logger.error(f"Database connection verification failed: {e}", exc_info=True)
+            return False
 
     def new_user(self, id, name):
         return dict(
@@ -75,36 +97,50 @@ class Db:
         return b_users
 
     async def update_configs(self, id, configs):
-        await self.col.update_one({'id': int(id)}, {'$set': {'configs': configs}})
+        try:
+            await self.col.update_one({'id': int(id)}, {'$set': {'configs': configs}})
+            logger.info(f"Updated configs for user {id}")
+        except Exception as e:
+            logger.error(f"Failed to update configs for user {id}: {e}", exc_info=True)
+            raise
 
     async def get_configs(self, id):
-        default = {
-            'caption': None,
-            'duplicate': True,
-            'forward_tag': False,
-            'min_size': 0,
-            'max_size': 0,
-            'extension': None,
-            'keywords': None,
-            'protect': None,
-            'button': None,
-            'db_uri': None,
-            'filters': {
-               'poll': True,
-               'text': True,
-               'audio': True,
-               'voice': True,
-               'video': True,
-               'photo': True,
-               'document': True,
-               'animation': True,
-               'sticker': True
+        try:
+            default = {
+                'caption': None,
+                'duplicate': True,
+                'forward_tag': False,
+                'min_size': 0,
+                'max_size': 0,
+                'extension': None,
+                'keywords': None,
+                'protect': None,
+                'button': None,
+                'db_uri': None,
+                'replacement_words': {},
+                'delete_words': [],
+                'filters': {
+                   'poll': True,
+                   'text': True,
+                   'audio': True,
+                   'voice': True,
+                   'video': True,
+                   'photo': True,
+                   'document': True,
+                   'animation': True,
+                   'sticker': True
+                }
             }
-        }
-        user = await self.col.find_one({'id':int(id)})
-        if user:
-            return user.get('configs', default)
-        return default 
+            user = await self.col.find_one({'id':int(id)})
+            if user:
+                configs = user.get('configs', default)
+                logger.debug(f"Retrieved configs for user {id}")
+                return configs
+            logger.debug(f"No configs found for user {id}, using defaults")
+            return default
+        except Exception as e:
+            logger.error(f"Failed to get configs for user {id}: {e}", exc_info=True)
+            return default
 
     async def add_bot(self, datas):
        if not await self.is_bot_exist(datas['user_id']):
