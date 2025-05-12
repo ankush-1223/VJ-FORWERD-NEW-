@@ -11,6 +11,7 @@ from .test import get_configs, update_configs, CLIENT, parse_buttons
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .db import connect_user_db
 import re
+from pyrogram.errors import MessageNotModified
 
 logger = logging.getLogger(__name__)
 CLIENT = CLIENT()
@@ -305,7 +306,11 @@ async def process_settings_query(bot, query):
                 [InlineKeyboardButton('⫷ Back', callback_data="settings#caption")]
             ]
             
-            await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+            try:
+                await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+            except MessageNotModified:
+                # If message wasn't modified, just ignore the error
+                pass
             
         except Exception as e:
             logger.error(f"Error in seecaption: {e}", exc_info=True)
@@ -388,7 +393,7 @@ async def process_settings_query(bot, query):
             replacements[word] = replace_word
             await update_configs(user_id, 'replacement_words', replacements)
             
-            # Show updated caption view immediately
+            # Keep original feature with "See Updated Caption" button
             await ask.reply(
                 f"✅ Successfully added replacement:\n<code>{word}</code> → <code>{replace_word}</code>",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('👀 See Updated Caption', callback_data="settings#seecaption")]])
@@ -433,7 +438,7 @@ async def process_settings_query(bot, query):
             
             await update_configs(user_id, 'delete_words', delete_words)
             
-            # Show updated caption view immediately
+            # Keep original feature with "See Updated Caption" button
             await ask.reply(
                 f"✅ Successfully added {len(new_words)} word(s) to delete list",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('👀 See Updated Caption', callback_data="settings#seecaption")]])
