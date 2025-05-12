@@ -9,6 +9,7 @@ from pyrogram import Client, filters
 from .test import get_configs, update_configs, CLIENT, parse_buttons
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .db import connect_user_db
+import re
 
 CLIENT = CLIENT()
 
@@ -160,75 +161,139 @@ async def settings_query(bot, query):
         "<b>successfully updated</b>",
         reply_markup=InlineKeyboardMarkup(buttons))
 
-  elif type=="caption":
-     buttons = []
-     data = await get_configs(user_id)
-     caption = data['caption']
-     if caption is None:
-        buttons.append([InlineKeyboardButton('✚ Add Caption ✚', 
-                      callback_data="settings#addcaption")])
-     else:
-        buttons.append([InlineKeyboardButton('See Caption', 
-                      callback_data="settings#seecaption")])
-        buttons[-1].append(InlineKeyboardButton('🗑️ Delete Caption', 
-                      callback_data="settings#deletecaption"))
-     buttons.append([InlineKeyboardButton('back', 
-                      callback_data="settings#main")])
-     await query.message.edit_text(
-        "<b><u>CUSTOM CAPTION</b></u>\n\n<b>You can set a custom caption to videos and documents. Normaly use its default caption</b>\n\n<b><u>AVAILABLE FILLINGS:</b></u>\n- <code>{filename}</code> : Filename\n- <code>{size}</code> : File size\n- <code>{caption}</code> : default caption",
-        reply_markup=InlineKeyboardMarkup(buttons))
+elif type == "caption":
+    buttons = []
+    data = await get_configs(user_id)
+    caption = data.get('caption')
+    replacements = data.get('replacement_words') or {}
+    delete_words = data.get('delete_words') or []
 
-  elif type=="seecaption":   
-     data = await get_configs(user_id)
-     buttons = [[InlineKeyboardButton('🖋️ Edit Caption', 
+    if caption is None:
+        buttons.append([InlineKeyboardButton('✚ Add Caption ✚',
+                                             callback_data="settings#addcaption")])
+    else:
+        buttons.append([InlineKeyboardButton('👀 See Caption',
+                                             callback_data="settings#seecaption"),
+                        InlineKeyboardButton('🗑️ Delete Caption',
+                                             callback_data="settings#deletecaption")])
+        if replacements:
+            buttons.append([InlineKeyboardButton('🔄 Replace Words',
+                                                 callback_data="settings#setreplacement")])
+        if delete_words:
+            buttons.append([InlineKeyboardButton('🗑️ Remove Words',
+                                                 callback_data="settings#deleteword")])
+        buttons.append([InlineKeyboardButton('🔁 Reset Caption Settings',
+                                             callback_data="settings#resetcaption")])
+
+    buttons.append([InlineKeyboardButton('back',
+                                         callback_data="settings#main")])
+
+    await query.message.edit_text(
+        "<b><u>CUSTOM CAPTION</u></b>\n\n"
+        "<b>You can set a custom caption for videos and documents. By default, the original caption is used.</b>\n\n"
+        "<b><u>AVAILABLE FILLINGS:</u></b>\n"
+        "- <code>{filename}</code> : Filename\n"
+        "- <code>{size}</code> : File size\n"
+        "- <code>{caption}</code> : Default caption\n\n"
+        "<b>You can also replace or delete specific words from the filename/caption.</b>",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
+elif type == "setreplacement":
+    await query.message.delete()
+    ask = await bot.ask(query.message.chat.id, "**Send word to replace in format:**\n`'WORD' 'REPLACEWORD'`\n\n/cancel to abort")
+    if ask.text == "/cancel":
+        return await ask.reply_text("❌ Process cancelled.")
+    match = re.match(r"'(.+)' '(.+)'", ask.text)
+    if not match:
+        return await ask.reply("❌ Invalid format. Use `'OLD' 'NEW'`.")
+    word, replace_word = match.groups()
+    delete_words = (await get_configs(user_id)).get('delete_words', [])
+    if word in delete_words:
+        return await ask.reply(f"❌ The word '{word}' is in the delete list and cannot be replaced.")
+    replacements = (await get_configs(user_id)).get('replacement_words', {}) or {}
+    replacements[word] = replace_word
+    await update_configs(user_id, 'replacement_words', replacements)
+    await ask.reply("✅ Replacement saved.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data="settings#caption")]]))
+
+
+elif type == "deleteword":
+    await query.message.delete()
+    ask = await bot.ask(query.message.chat.id, "**Send word(s) to delete (space separated)**\n\n/cancel to abort")
+    if ask.text == "/cancel":
+        return await ask.reply_text("❌ Process cancelled.")
+    words = ask.text.strip().split()
+    delete_words = (await get_configs(user_id)).get('delete_words', []) or []
+    delete_words.extend(w for w in words if w not in delete_words)
+    await update_configs(user_id, 'delete_words', delete_words)
+    await ask.reply("✅ Words added to delete list.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data="settings#caption")]]))
+
+
+elif type == "resetcaption":
+    await update_configs(user_id, 'caption', None)
+    await update_configs(user_id, 'replacement_words', None)
+    await update_configs(user_id, 'delete_words', None)
+    await query.message.edit_text("✅ Caption and related settings have been reset.",
+                                  reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data="settings#caption")]]))
+
+
+elif type == "seecaption":
+    data = await get_configs(user_id)
+    buttons = [[InlineKeyboardButton('🖋️ Edit Caption', 
                   callback_data="settings#addcaption")
                ],[
                InlineKeyboardButton('back', 
                  callback_data="settings#caption")]]
-     await query.message.edit_text(
+    await query.message.edit_text(
         f"<b><u>YOUR CUSTOM CAPTION</b></u>\n\n<code>{data['caption']}</code>",
         reply_markup=InlineKeyboardMarkup(buttons))
 
-  elif type=="deletecaption":
-     await update_configs(user_id, 'caption', None)
-     await query.message.edit_text(
+
+elif type == "deletecaption":
+    await update_configs(user_id, 'caption', None)
+    buttons = [[InlineKeyboardButton('back', callback_data="settings#caption")]]
+    await query.message.edit_text(
         "<b>successfully updated</b>",
         reply_markup=InlineKeyboardMarkup(buttons))
 
-  elif type=="addcaption":
-     await query.message.delete()
-     caption = await bot.ask(query.message.chat.id, "Send your custom caption\n/cancel - <code>cancel this process</code>")
-     if caption.text=="/cancel":
+
+elif type == "addcaption":
+    await query.message.delete()
+    caption = await bot.ask(query.message.chat.id, "Send your custom caption\n/cancel - <code>cancel this process</code>")
+    if caption.text == "/cancel":
         return await caption.reply_text(
                   "<b>process canceled !</b>",
-                  reply_markup=InlineKeyboardMarkup(buttons))
-     try:
-         caption.text.format(filename='', size='', caption='')
-     except KeyError as e:
-         return await caption.reply_text(
+                  reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data="settings#caption")]]))
+    try:
+        caption.text.format(filename='', size='', caption='')
+    except KeyError as e:
+        return await caption.reply_text(
             f"<b>wrong filling {e} used in your caption. change it</b>",
-            reply_markup=InlineKeyboardMarkup(buttons))
-     await update_configs(user_id, 'caption', caption.text)
-     await caption.reply_text(
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data="settings#caption")]]))
+    await update_configs(user_id, 'caption', caption.text)
+    await caption.reply_text(
         "<b>successfully updated</b>",
-        reply_markup=InlineKeyboardMarkup(buttons))
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data="settings#caption")]]))
 
-  elif type=="button":
-     buttons = []
-     button = (await get_configs(user_id))['button']
-     if button is None:
+
+elif type == "button":
+    buttons = []
+    button = (await get_configs(user_id))['button']
+    if button is None:
         buttons.append([InlineKeyboardButton('✚ Add Button ✚', 
                       callback_data="settings#addbutton")])
-     else:
+    else:
         buttons.append([InlineKeyboardButton('👀 See Button', 
                       callback_data="settings#seebutton")])
         buttons[-1].append(InlineKeyboardButton('🗑️ Remove Button ', 
                       callback_data="settings#deletebutton"))
-     buttons.append([InlineKeyboardButton('back', 
+    buttons.append([InlineKeyboardButton('back', 
                       callback_data="settings#main")])
-     await query.message.edit_text(
-        "<b><u>CUSTOM BUTTON</b></u>\n\n<b>You can set a inline button to messages.</b>\n\n<b><u>FORMAT:</b></u>\n`[Forward bot][buttonurl:https://t.me/mychannelurl]`\n",
+    await query.message.edit_text(
+        "<b><u>CUSTOM BUTTON</b></u>\n\n<b>You can set an inline button to messages.</b>\n\n<b><u>FORMAT:</b></u>\n`[Forward bot][buttonurl:https://t.me/mychannelurl]`\n",
         reply_markup=InlineKeyboardMarkup(buttons))
+
 
   elif type=="addbutton":
      await query.message.delete()
