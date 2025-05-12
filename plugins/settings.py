@@ -248,19 +248,47 @@ async def process_settings_query(bot, query):
             delete_words = data.get('delete_words', [])
             
             text = "<b><u>YOUR CAPTION SETTINGS</b></u>\n\n"
-            text += "<b>📝 Original Caption:</b>\n<code>{}</code>\n\n".format(caption)
             
+            # Show Original Caption
+            text += "<b>📝 Original Caption:</b>\n"
+            text += f"<code>{caption}</code>\n\n"
+            
+            # Show Word Replacements
+            text += "<b>🔄 Word Replacements:</b>\n"
             if replacements:
-                text += "<b>🔄 Word Replacements:</b>\n"
                 for old, new in replacements.items():
                     text += f"• <code>{old}</code> → <code>{new}</code>\n"
-                text += "\n"
+            else:
+                text += "No replacements set\n"
+            text += "\n"
             
+            # Show Words to Delete
+            text += "<b>🗑️ Words to Delete:</b>\n"
             if delete_words:
-                text += "<b>🗑️ Words to Delete:</b>\n"
                 for word in delete_words:
                     text += f"• <code>{word}</code>\n"
-                text += "\n"
+            else:
+                text += "No words set for deletion\n"
+            text += "\n"
+            
+            # Show Example
+            if caption != 'No caption set':
+                text += "<b>📋 Example Output:</b>\n"
+                try:
+                    example = caption.format(
+                        filename="example.mp4",
+                        size="100MB",
+                        caption="Original caption"
+                    )
+                    # Apply replacements
+                    for old, new in replacements.items():
+                        example = example.replace(old, new)
+                    # Remove deleted words
+                    for word in delete_words:
+                        example = example.replace(word, "")
+                    text += f"<code>{example}</code>\n\n"
+                except:
+                    text += "<i>Could not generate example</i>\n\n"
             
             buttons = [
                 [InlineKeyboardButton('🖋️ Edit Caption', callback_data="settings#addcaption")],
