@@ -20,159 +20,200 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQ
 from .db import connect_user_db
 from pyrogram.types import Message
 
+# Constants for memory management
+MAX_DUP_FILES = 1000  # Maximum number of duplicate files to keep in memory
+BATCH_SIZE = 100      # Number of messages to process before cleanup
+PROGRESS_UPDATE_INTERVAL = 20  # Update progress every N messages
+
+logger = logging.getLogger(__name__)
+CLIENT = CLIENT()
+
 # Don't Remove Credit Tg - @VJ_Botz
 # Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
 # Ask Doubt on telegram @KingVJ01
 
-CLIENT = CLIENT()
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 TEXT = Script.TEXT
 
 # Don't Remove Credit Tg - @VJ_Botz
 # Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
 # Ask Doubt on telegram @KingVJ01
 
-@Client.on_callback_query(filters.regex(r'^start_public'))
-async def pub_(bot, message):
-    user = message.from_user.id
-    temp.CANCEL[user] = False
-    frwd_id = message.data.split("_")[2]
-    if temp.lock.get(user) and str(temp.lock.get(user))=="True":
-      return await message.answer("please wait until previous task complete", show_alert=True)
-    sts = STS(frwd_id)
-    if not sts.verify():
-      await message.answer("your are clicking on my old button", show_alert=True)
-      return await message.message.delete()
-    i = sts.get(full=True)
-    if i.TO in temp.IS_FRWD_CHAT:
-      return await message.answer("In Target chat a task is progressing. please wait until task complete", show_alert=True)
-    m = await msg_edit(message.message, "<code>verifying your data's, please wait.</code>")
-    _bot, caption, forward_tag, datas, protect, button = await sts.get_data(user)
-    filter = datas['filters']
-    max_size = datas['max_size']
-    min_size = datas['min_size']
-    keyword = datas['keywords']
-    exten = datas['extensions']
-    keywords = ""
-    extensions = ""
-    if keyword:
-        for key in keyword:
-            keywords += f"{key}|"
-        keywords  = keywords.rstrip("|")
-    else:
-        keywords = None
-    if exten:
-        for ext in exten:
-            extensions += f"{ext}|"
-        extensions = extensions.rstrip("|")
-    else:
-        extensions = None
-    if not _bot:
-      return await msg_edit(m, "<code>You didn't added any bot. Please add a bot using /settings !</code>", wait=True)
-    if _bot['is_bot'] == True:
-        data = _bot['token']
-    else:
-        data = _bot['session']
+async def cleanup_dup_files(dup_files):
+    """Clean up duplicate files list to prevent memory issues"""
+    if len(dup_files) > MAX_DUP_FILES:
+        logger.info(f"Cleaning up dup_files list from {len(dup_files)} to {MAX_DUP_FILES}")
+        return dup_files[-MAX_DUP_FILES:]
+    return dup_files
+
+async def process_message_batch(messages, client, user_id, m, sts, filter, max_size, min_size, 
+                              extensions, keywords, dup_files, datas, user_have_db, user_db):
+    """Process a batch of messages"""
     try:
-      il = True if _bot['is_bot'] == True else False
-      client = await get_client(data, is_bot=il)
-      await client.start()
-    except Exception as e:  
-      return await m.edit(e)
-    await msg_edit(m, "<code>processing..</code>")
-    try: 
-       await client.get_messages(sts.get("FROM"), sts.get("limit"))
-    except:
-       await msg_edit(m, f"**Source chat may be a private channel / group. Use userbot (user must be member over there) or  if Make Your [Bot](t.me/{_bot['username']}) an admin over there**", retry_btn(frwd_id), True)
-       return await stop(client, user)
-    try:
-       k = await client.send_message(i.TO, "Testing")
-       await k.delete()
-    except:
-       await msg_edit(m, f"**Please Make Your [UserBot / Bot](t.me/{_bot['username']}) Admin In Target Channel With Full Permissions**", retry_btn(frwd_id), True)
-       return await stop(client, user)
-    user_have_db = False
-    dburi = datas['db_uri']
-    if dburi is not None:
-        connected, user_db = await connect_user_db(user, dburi, i.TO)
-        if not connected:
-            await msg_edit(m, "<code>Cannot Connected Your db Errors Found Dup files Have Been Skipped after Restart</code>")
-        else:
-            user_have_db = True
-    temp.forwardings += 1
-    await db.add_frwd(user)
-    await send(client, user, "<b>Fᴏʀᴡᴀᴅɪɴɢ sᴛᴀʀᴛᴇᴅ🔥</b>")
-    sts.add(time=True)
-    sleep = 1 if _bot['is_bot'] else 10
-    await msg_edit(m, "<code>processing...</code>") 
-    temp.IS_FRWD_CHAT.append(i.TO)
-    temp.lock[user] = locked = True
-    dup_files = []
-    if locked:
-        try:
-          MSG = []
-          pling=0
-          await edit(user, m, 'ᴘʀᴏɢʀᴇssɪɴɢ', 5, sts)
-          async for message in iter_messages(client, chat_id=sts.get("FROM"), limit=sts.get("limit"), offset=sts.get("skip"), filters=filter, max_size=max_size):
-                if await is_cancelled(client, user, m, sts):
-                   if user_have_db:
-                      await user_db.drop_all()
-                      await user_db.close()
-                   return
-                if pling %20 == 0: 
-                   await edit(user, m, 'ᴘʀᴏɢʀᴇssɪɴɢ', 5, sts)
-                pling += 1
-                sts.add('fetched')
-                if message == "DUPLICATE":
-                   sts.add('duplicate')
-                   continue
-                elif message == "FILTERED":
-                   sts.add('filtered')
-                   continue 
-                elif message.empty or message.service:
-                   sts.add('deleted')
-                   continue
-                elif message.document and await extension_filter(extensions, message.document.file_name):
-                   sts.add('filtered')
-                   continue 
-                elif message.document and await keyword_filter(keywords, message.document.file_name):
-                   sts.add('filtered')
-                   continue 
-                elif message.document and await size_filter(max_size, min_size, message.document.file_size):
-                   sts.add('filtered')
-                   continue 
-                elif message.document and message.document.file_id in dup_files:
-                   sts.add('duplicate')
-                   continue
-                if message.document and datas['skip_duplicate']:
+        for message in messages:
+            if await is_cancelled(client, user_id, m, sts):
+                if user_have_db:
+                    await user_db.drop_all()
+                    await user_db.close()
+                return False
+
+            sts.add('fetched')
+            
+            if message == "DUPLICATE":
+                sts.add('duplicate')
+                continue
+            elif message == "FILTERED":
+                sts.add('filtered')
+                continue
+            elif message.empty or message.service:
+                sts.add('deleted')
+                continue
+            elif message.document:
+                if await extension_filter(extensions, message.document.file_name):
+                    sts.add('filtered')
+                    continue
+                if await keyword_filter(keywords, message.document.file_name):
+                    sts.add('filtered')
+                    continue
+                if await size_filter(max_size, min_size, message.document.file_size):
+                    sts.add('filtered')
+                    continue
+                if message.document.file_id in dup_files:
+                    sts.add('duplicate')
+                    continue
+                
+                if datas['skip_duplicate']:
                     dup_files.append(message.document.file_id)
                     if user_have_db:
                         await user_db.add_file(message.document.file_id)
-                if forward_tag:
-                   MSG.append(message.id)
-                   notcompleted = len(MSG)
-                   completed = sts.get('total') - sts.get('fetched')
-                   if ( notcompleted >= 100 
-                        or completed <= 100): 
-                      await forward(user, client, MSG, m, sts, protect)
-                      sts.add('total_files', notcompleted)
-                      await asyncio.sleep(10)
-                      MSG = []
-                else:
-                   new_caption = custom_caption(message, caption)
-                   details = {"msg_id": message.id, "media": media(message), "caption": new_caption, 'button': button, "protect": protect}
-                   await copy(user, client, details, m, sts)
-                   sts.add('total_files')
-                   await asyncio.sleep(sleep) 
-        except Exception as e:
-            await msg_edit(m, f'<b>ERROR:</b>\n<code>{e}</code>', wait=True)
-            print(e)
-            if user_have_db:
-                await user_db.drop_all()
-                await user_db.close()
-            temp.IS_FRWD_CHAT.remove(sts.TO)
+                    
+                    # Cleanup if needed
+                    if len(dup_files) % BATCH_SIZE == 0:
+                        dup_files = await cleanup_dup_files(dup_files)
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error processing message batch: {e}", exc_info=True)
+        return False
+
+@Client.on_callback_query(filters.regex(r'^start_public'))
+async def pub_(bot, message):
+    try:
+        user = message.from_user.id
+        temp.CANCEL[user] = False
+        frwd_id = message.data.split("_")[2]
+        
+        if temp.lock.get(user) and str(temp.lock.get(user))=="True":
+            return await message.answer("Please wait until previous task completes", show_alert=True)
+            
+        sts = STS(frwd_id)
+        if not sts.verify():
+            await message.answer("You are clicking on an old button", show_alert=True)
+            return await message.message.delete()
+            
+        i = sts.get(full=True)
+        if i.TO in temp.IS_FRWD_CHAT:
+            return await message.answer("In Target chat a task is progressing. please wait until task complete", show_alert=True)
+        m = await msg_edit(message.message, "<code>verifying your data's, please wait.</code>")
+        _bot, caption, forward_tag, datas, protect, button = await sts.get_data(user)
+        filter = datas['filters']
+        max_size = datas['max_size']
+        min_size = datas['min_size']
+        keyword = datas['keywords']
+        exten = datas['extensions']
+        keywords = ""
+        extensions = ""
+        if keyword:
+            for key in keyword:
+                keywords += f"{key}|"
+            keywords  = keywords.rstrip("|")
+        else:
+            keywords = None
+        if exten:
+            for ext in exten:
+                extensions += f"{ext}|"
+            extensions = extensions.rstrip("|")
+        else:
+            extensions = None
+        if not _bot:
+            return await msg_edit(m, "<code>You didn't added any bot. Please add a bot using /settings !</code>", wait=True)
+        if _bot['is_bot'] == True:
+            data = _bot['token']
+        else:
+            data = _bot['session']
+        try:
+            il = True if _bot['is_bot'] == True else False
+            client = await get_client(data, is_bot=il)
+            await client.start()
+        except Exception as e:  
+            return await m.edit(e)
+        await msg_edit(m, "<code>processing..</code>")
+        try: 
+            await client.get_messages(sts.get("FROM"), sts.get("limit"))
+        except:
+            await msg_edit(m, f"**Source chat may be a private channel / group. Use userbot (user must be member over there) or  if Make Your [Bot](t.me/{_bot['username']}) an admin over there**", retry_btn(frwd_id), True)
             return await stop(client, user)
+        try:
+            k = await client.send_message(i.TO, "Testing")
+            await k.delete()
+        except:
+            await msg_edit(m, f"**Please Make Your [UserBot / Bot](t.me/{_bot['username']}) Admin In Target Channel With Full Permissions**", retry_btn(frwd_id), True)
+            return await stop(client, user)
+        user_have_db = False
+        dburi = datas['db_uri']
+        if dburi is not None:
+            connected, user_db = await connect_user_db(user, dburi, i.TO)
+            if not connected:
+                await msg_edit(m, "<code>Cannot Connected Your db Errors Found Dup files Have Been Skipped after Restart</code>")
+            else:
+                user_have_db = True
+        temp.forwardings += 1
+        await db.add_frwd(user)
+        await send(client, user, "<b>Fᴏʀᴡᴀᴅɪɴɢ sᴛᴀʀᴛᴇᴅ🔥</b>")
+        sts.add(time=True)
+        sleep = 1 if _bot['is_bot'] else 10
+        await msg_edit(m, "<code>processing...</code>") 
+        temp.IS_FRWD_CHAT.append(i.TO)
+        temp.lock[user] = locked = True
+        dup_files = []
+        if locked:
+            try:
+                MSG = []
+                pling = 0
+                if user_have_db and datas['skip_duplicate']:
+                    old_files = await user_db.get_all_files()
+                    async for ofile in old_files:
+                        dup_files.append(ofile["file_id"])
+                        if len(dup_files) >= MAX_DUP_FILES:
+                            break
+                
+                await edit(user, m, 'ᴘʀᴏɢʀᴇssɪɴɢ', 5, sts)
+                async for message_batch in iter_messages(client, chat_id=sts.get("FROM"), 
+                                                      limit=sts.get("limit"), 
+                                                      offset=sts.get("skip"), 
+                                                      filters=filter, 
+                                                      max_size=max_size):
+                    if pling % PROGRESS_UPDATE_INTERVAL == 0:
+                        await edit(user, m, 'ᴘʀᴏɢʀᴇssɪɴɢ', 5, sts)
+                    pling += 1
+                    
+                    if not await process_message_batch(message_batch, client, user, m, sts, 
+                                                     filter, max_size, min_size, extensions, 
+                                                     keywords, dup_files, datas, user_have_db, user_db):
+                        break
+                        
+            except Exception as e:
+                logger.error(f"Error in forwarding process: {e}", exc_info=True)
+                await m.edit(f"❌ An error occurred: {str(e)}")
+            finally:
+                if user_have_db:
+                    try:
+                        await user_db.close()
+                    except:
+                        pass
+                temp.lock[user] = False
+                if i.TO in temp.IS_FRWD_CHAT:
+                    temp.IS_FRWD_CHAT.remove(i.TO)
+                    
         temp.IS_FRWD_CHAT.remove(sts.TO)
         await send(client, user, "<b>🎉 ғᴏʀᴡᴀᴅɪɴɢ ᴄᴏᴍᴘʟᴇᴛᴇᴅ</b>")
         await edit(user, m, 'ᴄᴏᴍᴘʟᴇᴛᴇᴅ', "completed", sts) 
@@ -180,6 +221,9 @@ async def pub_(bot, message):
             await user_db.drop_all()
             await user_db.close()
         await stop(client, user)
+    except Exception as e:
+        logger.error(f"Error in pub_ handler: {e}", exc_info=True)
+        await message.answer("An error occurred. Please try again.", show_alert=True)
 
 # Don't Remove Credit Tg - @VJ_Botz
 # Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
