@@ -244,8 +244,8 @@ async def process_settings_query(bot, query):
         try:
             data = await get_configs(user_id)
             caption = data.get('caption', 'No caption set')
-            replacements = data.get('replacement_words', {})
-            delete_words = data.get('delete_words', [])
+            replacements = data.get('replacement_words', {}) or {}
+            delete_words = data.get('delete_words', []) or []
             
             text = "<b><u>YOUR CAPTION SETTINGS</b></u>\n\n"
             
@@ -271,24 +271,31 @@ async def process_settings_query(bot, query):
                 text += "No words set for deletion\n"
             text += "\n"
             
-            # Show Example
+            # Show Example with all changes applied
             if caption != 'No caption set':
                 text += "<b>📋 Example Output:</b>\n"
                 try:
+                    # First apply the caption template
                     example = caption.format(
                         filename="example.mp4",
                         size="100MB",
                         caption="Original caption"
                     )
-                    # Apply replacements
+                    
+                    # Then apply all replacements
                     for old, new in replacements.items():
                         example = example.replace(old, new)
-                    # Remove deleted words
+                    
+                    # Finally remove all deleted words
                     for word in delete_words:
                         example = example.replace(word, "")
+                    
+                    # Clean up any double spaces that might have been created
+                    example = ' '.join(example.split())
+                    
                     text += f"<code>{example}</code>\n\n"
-                except:
-                    text += "<i>Could not generate example</i>\n\n"
+                except Exception as e:
+                    text += f"<i>Could not generate example: {str(e)}</i>\n\n"
             
             buttons = [
                 [InlineKeyboardButton('🖋️ Edit Caption', callback_data="settings#addcaption")],
@@ -301,6 +308,7 @@ async def process_settings_query(bot, query):
             await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
             
         except Exception as e:
+            logger.error(f"Error in seecaption: {e}", exc_info=True)
             await query.message.reply(f"❌ Error: {str(e)}")
             await handle_back_button(query.message, "settings#caption")
 
@@ -437,10 +445,16 @@ async def process_settings_query(bot, query):
 
     elif type=="resetcaption":
         try:
+            # Reset all caption settings
             await update_configs(user_id, 'caption', None)
-            await update_configs(user_id, 'replacement_words', None)
-            await update_configs(user_id, 'delete_words', None)
-            await handle_back_button(query.message, "settings#caption")
+            await update_configs(user_id, 'replacement_words', {})
+            await update_configs(user_id, 'delete_words', [])
+            
+            # Show the updated empty caption view
+            await query.message.edit_text(
+                "<b>✅ All caption settings have been reset</b>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('👀 See Caption Settings', callback_data="settings#seecaption")]])
+            )
         except Exception as e:
             await query.message.reply(f"❌ Error: {str(e)}")
             await handle_back_button(query.message, "settings#caption")
